@@ -23,6 +23,12 @@ static int elfdump(void *head) {
         fprintf(stderr, "This is not ELF file\n");
         return 1;
     }
+
+    if (p[EI_CLASS] != ELFCLASS64) {
+        fprintf(stderr, "unknown class. (%d)\n", (int)p[EI_CLASS]);
+    }
+
+    // if (p[EI_DATA] != ELFDATA2MSB)
 }
 
 int main(int argc, char *argv[]) {
