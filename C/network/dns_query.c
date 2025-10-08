@@ -1,3 +1,12 @@
+/*
+Hostname Resolution and DNS
+
+ドメイン例：example.com
+
+
+*/
+
+
 #include "network.h"
 
 const unsigned char *print_name(const unsigned char *msg, const unsigned char *p, const unsigned char *end) {
