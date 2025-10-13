@@ -24,6 +24,7 @@
 
 typedef struct {
     int verbose;
+    int dlt;
 } user_args_t;
 
 static void print_mac(const u_char *m) {
@@ -51,6 +52,26 @@ static int skip_vlan(const u_char *pkt, size_t caplen, size_t *l2_len, uint16_t 
     *l2_len = off;
     *etype_out = etype;
     return 0;
+}
+
+static int get_l3_offset_and_etype(const u_char *p, size_t caplen, int dlt, size_t *l2_len, uint16_t *etype_out) {
+    if (dlt == DLT_EN10MB) {
+        return skip_vlan(p, caplen, l2_len, etype_out);
+    } else if (dlt == DLT_LINUX_SLL) {
+        if (caplen < 16)
+            return -1;
+        *l2_len = 16;
+        *etype_out = ntohs(*(const uint16_t *)(p + 14));
+        return 0;
+    } else if (dlt == DLT_LINUX_SLL2) {
+        if (caplen < 20)
+            return -1;
+        *l2_len = 20;
+        *etype_out = ntohs(*(const uint16_t *)(p + 0));
+        return 0;
+    }
+
+    return -2;
 }
 
 static int ipv6_locate_l4(const u_char *base, size_t caplen, size_t ipv6_off, size_t *l4_off, uint8_t *nh_out) {
@@ -114,22 +135,21 @@ static void on_packet(u_char *uargs, const struct pcap_pkthdr *h, const u_char *
             return;
     }
 
-    const struct ether_header *eth = (const struct ether_header *)p;
     uint16_t etype = 0;
     size_t l2 = 0;
-    if (skip_vlan(p, h->caplen, &l2, &etype) != 0) {
-        if (ua && ua->verbose)
-            printf("VLAN parse error\n");
-            return;
+    int rc = get_l3_offset_and_etype(p, h->caplen, ua ? ua->dlt : DLT_EN10MB, &l2, &etype);
+    if (rc != 0) {
+        if (ua && ua->verbose) {
+            if (rc == -2)
+                printf("Unsupported DLT=%d (e.g radiotap)\n", ua->dlt);
+            else
+                printf("L2 parse error\n");
+        }
+        return;
     }
 
     if (ua && ua->verbose) {
-        printf("caplen=%u len=%u L2=%zu ", h->caplen, h->len, l2);
-        printf("src=");
-        print_mac(eth->ether_shost);
-        printf(" dst=");
-        print_mac(eth->ether_dhost);
-        printf(" ether=0x%04x\n", etype);
+        printf("caplen=%u len=%u L2=%zu ether=0x%04x\n", h->caplen, h->len, l2, etype);
     }
 
     if (etype == ETHERTYPE_IP) {
@@ -172,9 +192,6 @@ static void on_packet(u_char *uargs, const struct pcap_pkthdr *h, const u_char *
             size_t payload_len = 0;
             if (ulen >= sizeof(struct udphdr))
                 payload_len = ulen - sizeof(struct udphdr);
-            size_t rest = h->caplen - (l2 + ip_hl + sizeof(struct udphdr));
-            if (payload_len > rest)
-                payload_len = rest;
             size_t rest = h->caplen - (l2 + ip_hl + sizeof(struct udphdr));
             if (payload_len > rest)
                 payload_len = rest;
@@ -275,9 +292,25 @@ static void parse_args(int argc, char **argv, const char **ifname, int *count, i
 }
 
 int main(int argc, char **argv) {
+    /*
+    # まずは何でも表示（10個）
+    sudo ./sniffer -i wlp9s0 -c 10 -v
+    
+    # TCP だけ（HTTP/HTTPS トラフィックを別ターミナルで発生させる）
+    sudo ./sniffer -i wlp9s0 -c 50 "tcp"
+    
+    # どれがIFか分からない時
+    sudo ./sniffer -c 10 -v          # 最初のIF自動選択
+    sudo ./sniffer -i any -c 10      # any でまとめ取り（環境によっては便利）
+
+    sudo ./find_payload -i wlp9s0 -c 20 'tcp or (udp and port 53)'
+    # または TCPだけ
+    sudo ./find_payload -i wlp9s0 -c 20 'tcp'
+    */
     char errbuf[PCAP_ERRBUF_SIZE];
     const char *dev = NULL;
-    int packet_count = 1;
+    char *devdup = NULL;
+    int packet_count = 200;
     int verbose = 0;
     char *filter_str = NULL;
 
@@ -291,9 +324,11 @@ int main(int argc, char **argv) {
             return 1;
         }
         dev = alldevs->name;
+        devdup = strdup(alldevs->name);
         if (verbose)
             printf("Auto-selected devices: %s\n", dev);
         pcap_freealldevs(alldevs);
+        dev = devdup;
     }
 
     bpf_u_int32 ip_raw = 0, mask_raw = 0;
@@ -313,18 +348,23 @@ int main(int argc, char **argv) {
         return 2;
     }
 
-    if (pcap_datalink(h) != DLT_EN10MB) {
-        fprintf(stderr, "Device %s is not Ethernet (DLT=%d)\n", dev, pcap_datalink(h));
+    int dlt = pcap_datalink(h);
+    if (verbose)
+        printf("DLT=%d on %s\n", dlt, dev);
+
+    if (!(dlt == DLT_EN10MB || dlt == DLT_LINUX_SLL || dlt == DLT_LINUX_SLL2)) {
+        fprintf(stderr, "Unsupported datalink on %s (DLT=%d). Try another IF or monitor mode.\n", dev, dlt);
         pcap_close(h);
         free(filter_str);
+        free(devdup);
         return 3;
     }
 
     struct bpf_program fp;
     if (filter_str && filter_str[0]) {
         if (pcap_compile(h, &fp, filter_str, 1, mask_raw) == -1) {
-            frpintf(stderr, "pcap_compile error: %s\n", pcap_geterr(h));
-            pcal_close(h);
+            fprintf(stderr, "pcap_compile error: %s\n", pcap_geterr(h));
+            pcap_close(h);
             free(filter_str);
             return 4;
         }
@@ -339,7 +379,8 @@ int main(int argc, char **argv) {
     }
 
     user_args_t ua = {
-        .verbose = verbose
+        .verbose = verbose,
+        .dlt = dlt
     };
     printf("Capturing on %s%s%s\n",
            dev,
@@ -352,6 +393,7 @@ int main(int argc, char **argv) {
     }
 
     pcap_close(h);
+    free(devdup);
     free(filter_str);
     return 0;
 }
