@@ -1,0 +1,2 @@
+
+https://zenn.dev/zulinx86/articles/x86-64_address-translation

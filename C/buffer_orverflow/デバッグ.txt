@@ -1,0 +1,163 @@
+gcc firstrog.c
+
+./a.out を実行すると
+Hello World!
+Hello World!
+Hello World!
+Hello World!
+Hello World!
+Hello World!
+Hello World!
+Hello World!
+Hello World!
+Hello World!
+
+objdumpという実行可能バイナリを検査するプログラムを使って
+main()関数のマシン語がどのようにコンパイルされているか？
+
+objdump -D a.out | grep -A20 main.:
+
+0000000000001149 <main>:
+    1149:	f3 0f 1e fa          	endbr64
+    114d:	55                   	push   %rbp
+    114e:	48 89 e5             	mov    %rsp,%rbp
+    1151:	48 83 ec 10          	sub    $0x10,%rsp
+    1155:	c7 45 fc 00 00 00 00 	movl   $0x0,-0x4(%rbp)
+    115c:	eb 13                	jmp    1171 <main+0x28>
+    115e:	48 8d 05 9f 0e 00 00 	lea    0xe9f(%rip),%rax        # 2004 <_IO_stdin_used+0x4>
+    1165:	48 89 c7             	mov    %rax,%rdi
+    1168:	e8 e3 fe ff ff       	call   1050 <puts@plt>
+    116d:	83 45 fc 01          	addl   $0x1,-0x4(%rbp)
+    1171:	83 7d fc 09          	cmpl   $0x9,-0x4(%rbp)
+    1175:	7e e7                	jle    115e <main+0x15>
+    1177:	b8 00 00 00 00       	mov    $0x0,%eax
+    117c:	c9                   	leave
+    117d:	c3                   	ret
+
+ここではobjdumpの出力をgrepに流し込んでmain.:という文字列以降を表示させている
+数字は16進数で表示されている。
+
+16進数：
+0 ~ 9 : 0 ~ 9
+10 ~ 15 : A ~ F (a ~ f)
+
+16進数を用いるのは1バイトが真か偽かを表す8つのビット(2進数の1桁)から成り立っており、
+各バイトが2桁の16進数で表現できる。
+
+0000000000001149 はメモリ空間を表す
+メモリ空間は8ビット(= 1バイト)の情報を記憶するメモリの集合体であり、
+各バイト単位にアドレスという固有の数値が割り当てられている。
+
+objdumpをIntelのシンタックスで表示させると
+
+objdump -M intel -D a.out | grep -A20 main.:
+
+0000000000001149 <main>:
+    1149:	f3 0f 1e fa          	endbr64
+    114d:	55                   	push   rbp
+    114e:	48 89 e5             	mov    rbp,rsp
+    1151:	48 83 ec 10          	sub    rsp,0x10
+    1155:	c7 45 fc 00 00 00 00 	mov    DWORD PTR [rbp-0x4],0x0
+    115c:	eb 13                	jmp    1171 <main+0x28>
+    115e:	48 8d 05 9f 0e 00 00 	lea    rax,[rip+0xe9f]        # 2004 <_IO_stdin_used+0x4>
+    1165:	48 89 c7             	mov    rdi,rax
+    1168:	e8 e3 fe ff ff       	call   1050 <puts@plt>
+    116d:	83 45 fc 01          	add    DWORD PTR [rbp-0x4],0x1
+    1171:	83 7d fc 09          	cmp    DWORD PTR [rbp-0x4],0x9
+    1175:	7e e7                	jle    115e <main+0x15>
+    1177:	b8 00 00 00 00       	mov    eax,0x0
+    117c:	c9                   	leave
+    117d:	c3                   	ret
+
+プロセッサが理解する命令
+命令語と操作の対象および・あるいは参照元を表す追加の引数から構成されている。
+命令語はメモリに保存されているデータを移送したり、基本的な演算を実行したり、
+プロセッサの処理に割り込んで他の処理を実行する。
+
+また、プロセッサはレジスタと呼ばれる特殊な変数(データの一時保存場所)も用意されている。
+
+ここでgdbを用いてレジスタの内容を表示させる。
+gdb -q ./a.out
+Reading symbols from ./a.out...
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) y
+Debuginfod has been enabled.
+To make this setting permanent, add 'set debuginfod enabled on' to .gdbinit.
+Downloading separate debug info for /home/onimas/develop/github/secure_programming/C/buffer_orverflow/a.out
+(No debugging symbols found in ./a.out)                                                                                                                                                 
+(gdb) break main
+Breakpoint 1 at 0x1151
+(gdb) run
+Starting program: /home/onimas/develop/github/secure_programming/C/buffer_orverflow/a.out 
+Downloading separate debug info for system-supplied DSO at 0x7ffff7fc3000
+[Thread debugging using libthread_db enabled]                                                                                                                                           
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+
+Breakpoint 1, 0x0000555555555151 in main ()
+(gdb) info registers
+rax            0x555555555149      93824992235849
+rbx            0x7fffffffdd78      140737488346488
+rcx            0x555555557dc0      93824992247232
+rdx            0x7fffffffdd88      140737488346504
+rsi            0x7fffffffdd78      140737488346488
+rdi            0x1                 1
+rbp            0x7fffffffdc50      0x7fffffffdc50
+rsp            0x7fffffffdc50      0x7fffffffdc50
+r8             0x0                 0
+r9             0x7ffff7fca380      140737353917312
+r10            0x7fffffffd970      140737488345456
+r11            0x203               515
+r12            0x1                 1
+r13            0x0                 0
+r14            0x555555557dc0      93824992247232
+r15            0x7ffff7ffd000      140737354125312
+rip            0x555555555151      0x555555555151 <main+8>
+eflags         0x246               [ PF ZF IF ]
+cs             0x33                51
+ss             0x2b                43
+ds             0x0                 0
+es             0x0                 0
+fs             0x0                 0
+gs             0x0                 0
+k0             0x10001000          268439552
+k1             0x880040            8912960
+k2             0x0                 0
+k3             0x0                 0
+k4             0x0                 0
+k5             0x0                 0
+k6             0x0                 0
+k7             0x0                 0
+fs_base        0x7ffff7fa8740      140737353779008
+gs_base        0x0                 0
+(gdb) quit
+A debugging session is active.
+
+	Inferior 1 [process 14605] will be killed.
+
+Quit anyway? (y or n) y
+
+main()関数にブレークポイントを設定しておくと、対象コード(ここではmain()関数)
+が実行される直前で処理が停止するようになる。
+そして、GDBにプログラムの実行を指示(run)し、ブレークポイントで停止したあと、
+プロセッサのすべてのレジスタとその現在の状態を表示している。(info registers)
+
+最初の4つのレジスタ(rax, rbx, rcx, rdx)は汎用レジスタと呼ばれる。
+これらはアキュミュレータ、ベースレジスタ、カウンタ、データレジスタと呼ばれる。
+CPUがマシン語命令を実行する際の一時変数として用いられる。
+次の4つのレジスタ(rsi, rdi, rbp, rsp)も汎用レジスタですが、
+こちらはポインタやインデックスという用途に用いられる。
+これはソースインデックス、ディスティネーションインデックス、ベースポインタ、スタックポインタ
+と呼ばれる。ポインタという名がついているのは、メモリ上の場所を指し示す64ビットのアドレスを
+値として格納するため。
+
+これとは別にripレジスタはインストラクションポインタとも呼ばれているレジスタであり、
+プロセッサによって実行されようとしている現在の命令が格納されているアドレスを
+指し示すようになっている。
+プロセッサもripレジスタで命令を指し示しながら読み込み実行していく。
+
+そして、eflagsレジスタは比較演算、あるいはメモリのセグメント化に用いられる
+複数のフラグから構成されている。
+メモリ空間は複数のセグメントに分割されているため、こういったレジスタを用いて
+管理を行う必要がある。
