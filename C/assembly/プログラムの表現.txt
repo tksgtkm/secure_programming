@@ -1,0 +1,105 @@
+gcc -fno-pic -fomit-frame-pointer -c add.c
+
+-fno-pic : 
+GCCに位置非依存のコードを生成しないことを支持するオプション
+機械語のプログラムは通常は配置されたアドレスに依存したプログラムになる。
+このため、例えば0x4000番地に配置するように作られたプログラムは0x8000番地に
+ロードしても実行できない。(アドレスに依存した機械語のため)
+位置非依存のコード(PIC)はメモリのどこにロードしても動作するような機械語の
+プログラムであり、どのアドレスにも依存しないような機械語になる。
+
+-fomit-frame-pointer
+GCCにフレームポインタを管理するコードを生成しないことを指示するオプション
+C言語のような高級言語ではスタック上にスタックフレームというデータ構造を
+もつことで関数呼び出しを実現している。
+GCCは通常デバッガの監視下でプログラムを実行したときにスタックフレームの
+状態を把握できるようにするためフレームポインタを管理するコードを生成する。
+フレームポインタはデバッガで用いるものなので、フレームポインタがなくても
+プログラムは動作する。
+
+書きを実行すれば、実行ファイルaddが生成される
+gcc -fno-pic -fomit-frame-pointer -o add add.c
+
+・gccコンパイラの内部動作
+
+-v オプションをつけて実行する
+$ gcc -v -fno-pic -fomit-frame-pointer -o add add.c
+Using built-in specs.
+COLLECT_GCC=gcc
+COLLECT_LTO_WRAPPER=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper
+OFFLOAD_TARGET_NAMES=nvptx-none:amdgcn-amdhsa
+OFFLOAD_TARGET_DEFAULT=1
+Target: x86_64-linux-gnu
+Configured with: ../src/configure -v --with-pkgversion='Ubuntu 13.3.0-6ubuntu2~24.04' --with-bugurl=file:///usr/share/doc/gcc-13/README.Bugs --enable-languages=c,ada,c++,go,d,fortran,objc,obj-c++,m2 --prefix=/usr --with-gcc-major-version-only --program-suffix=-13 --program-prefix=x86_64-linux-gnu- --enable-shared --enable-linker-build-id --libexecdir=/usr/libexec --without-included-gettext --enable-threads=posix --libdir=/usr/lib --enable-nls --enable-bootstrap --enable-clocale=gnu --enable-libstdcxx-debug --enable-libstdcxx-time=yes --with-default-libstdcxx-abi=new --enable-libstdcxx-backtrace --enable-gnu-unique-object --disable-vtable-verify --enable-plugin --enable-default-pie --with-system-zlib --enable-libphobos-checking=release --with-target-system-zlib=auto --enable-objc-gc=auto --enable-multiarch --disable-werror --enable-cet --with-arch-32=i686 --with-abi=m64 --with-multilib-list=m32,m64,mx32 --enable-multilib --with-tune=generic --enable-offload-targets=nvptx-none=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-nvptx/usr,amdgcn-amdhsa=/build/gcc-13-fG75Ri/gcc-13-13.3.0/debian/tmp-gcn/usr --enable-offload-defaulted --without-cuda-driver --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu --with-build-config=bootstrap-lto-lean --enable-link-serialization=2
+Thread model: posix
+Supported LTO compression algorithms: zlib zstd
+gcc version 13.3.0 (Ubuntu 13.3.0-6ubuntu2~24.04) 
+COLLECT_GCC_OPTIONS='-v' '-fno-pic' '-fomit-frame-pointer' '-o' 'add' '-mtune=generic' '-march=x86-64'
+ /usr/libexec/gcc/x86_64-linux-gnu/13/cc1 -quiet -v -imultiarch x86_64-linux-gnu add.c -quiet -dumpbase add.c -dumpbase-ext .c -mtune=generic -march=x86-64 -version -fno-pic -fomit-frame-pointer -fasynchronous-unwind-tables -fstack-protector-strong -Wformat -Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccDaoKjJ.s
+GNU C17 (Ubuntu 13.3.0-6ubuntu2~24.04) version 13.3.0 (x86_64-linux-gnu)
+	compiled by GNU C version 13.3.0, GMP version 6.3.0, MPFR version 4.2.1, MPC version 1.3.1, isl version isl-0.26-GMP
+
+GGC heuristics: --param ggc-min-expand=100 --param ggc-min-heapsize=131072
+ignoring nonexistent directory "/usr/local/include/x86_64-linux-gnu"
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed/x86_64-linux-gnu"
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/include-fixed"
+ignoring nonexistent directory "/usr/lib/gcc/x86_64-linux-gnu/13/../../../../x86_64-linux-gnu/include"
+#include "..." search starts here:
+#include <...> search starts here:
+ /usr/lib/gcc/x86_64-linux-gnu/13/include
+ /usr/local/include
+ /usr/include/x86_64-linux-gnu
+ /usr/include
+End of search list.
+Compiler executable checksum: 38987c28e967c64056a6454abdef726e
+COLLECT_GCC_OPTIONS='-v' '-fno-pic' '-fomit-frame-pointer' '-o' 'add' '-mtune=generic' '-march=x86-64'
+ as -v --64 -o /tmp/cctCrEEB.o /tmp/ccDaoKjJ.s
+GNU アセンブラ バージョン 2.42 (x86_64-linux-gnu)、BFD バージョン (GNU Binutils for Ubuntu) 2.42 を使用
+COMPILER_PATH=/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/13/:/usr/libexec/gcc/x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/
+LIBRARY_PATH=/usr/lib/gcc/x86_64-linux-gnu/13/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib/:/lib/x86_64-linux-gnu/:/lib/../lib/:/usr/lib/x86_64-linux-gnu/:/usr/lib/../lib/:/usr/lib/gcc/x86_64-linux-gnu/13/../../../:/lib/:/usr/lib/
+COLLECT_GCC_OPTIONS='-v' '-fno-pic' '-fomit-frame-pointer' '-o' 'add' '-mtune=generic' '-march=x86-64' '-dumpdir' 'add.'
+ /usr/libexec/gcc/x86_64-linux-gnu/13/collect2 -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/ccF2zrX4.res -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o add /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. /tmp/cctCrEEB.o -lgcc --push-state --as-needed -lgcc_s --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o
+COLLECT_GCC_OPTIONS='-v' '-fno-pic' '-fomit-frame-pointer' '-o' 'add' '-mtune=generic' '-march=x86-64' '-dumpdir' 'add.'
+
+上記より
+/usr/libexec/gcc/x86_64-linux-gnu/13/cc1 -quiet -v -imultiarch x86_64-linux-gnu add.c 
+-quiet -dumpbase add.c -dumpbase-ext .c -mtune=generic -march=x86-64 -version -fno-pic 
+-fomit-frame-pointer -fasynchronous-unwind-tables -fstack-protector-strong -Wformat 
+-Wformat-security -fstack-clash-protection -fcf-protection -o /tmp/ccDaoKjJ.s
+
+cc1はC言語で書かれたソースコードをアセンブリ言語に変換している。
+add.cをコンパイルし、tmpという作業用ディレクトリ(テンポラリディレクトリ)に
+アセンブリ言語/tmp/ccDaoKjJ.sを生成している。
+
+gccは次にアセンブラasを起動している。
+as -v --64 -o /tmp/cctCrEEB.o /tmp/ccDaoKjJ.s
+
+asはアセンブリ言語のプログラムを機械語にアセンブルしている。
+/tmp/cctCrEEB.oを生成している。
+
+そして最後にgccはリンカであるcollect2を起動している。
+ /usr/libexec/gcc/x86_64-linux-gnu/13/collect2 -plugin /usr/libexec/gcc/x86_64-linux-gnu/13/liblto_plugin.so 
+ -plugin-opt=/usr/libexec/gcc/x86_64-linux-gnu/13/lto-wrapper -plugin-opt=-fresolution=/tmp/ccF2zrX4.res -plugin-opt=-pass-through=-lgcc 
+ -plugin-opt=-pass-through=-lgcc_s -plugin-opt=-pass-through=-lc -plugin-opt=-pass-through=-lgcc 
+ -plugin-opt=-pass-through=-lgcc_s --build-id --eh-frame-hdr -m elf_x86_64 --hash-style=gnu --as-needed -dynamic-linker 
+ /lib64/ld-linux-x86-64.so.2 -pie -z now -z relro -o add /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/Scrt1.o 
+ /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crti.o /usr/lib/gcc/x86_64-linux-gnu/13/crtbeginS.o -L/usr/lib/gcc/x86_64-linux-gnu/13 
+ -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu -L/usr/lib/gcc/x86_64-linux-gnu/13/../../../../lib -L/lib/x86_64-linux-gnu -L/lib/../lib 
+ -L/usr/lib/x86_64-linux-gnu -L/usr/lib/../lib -L/usr/lib/gcc/x86_64-linux-gnu/13/../../.. /tmp/cctCrEEB.o -lgcc --push-state --as-needed -lgcc_s 
+ --pop-state -lc -lgcc --push-state --as-needed -lgcc_s --pop-state /usr/lib/gcc/x86_64-linux-gnu/13/crtendS.o 
+ /usr/lib/gcc/x86_64-linux-gnu/13/../../../x86_64-linux-gnu/crtn.o
+
+collect2は機械語オブジェクトファイル/tmp/cctCrEEB.oをその他のオブジェクトファイルや、
+ライブラリファイルとリンクしている。
+
+・C言語からアセンブリ言語へのコンパイル
+
+以下のようにしてC言語をアセンブリ言語にコンパイルする
+gcc -S -fno-pic -fomit-frame-pointer add.c
+
+つづいて、アセンブリ言語で書かれたプログラムをGNUアセンブラでアセンブルする。
+
+as -o add.o add.s
+
+-aオプションを指定するとアセンブル結果を標準出力に表示する
+as -a -o add.o add.s
