@@ -189,3 +189,74 @@ mov : 参照元から操作の対象に向けたデータの移送
 sub : 減算
 inc : 1だけ増やすインクリメント
 
+以下の例ではrspレジスタからrbpレジスタに値を移送したあと、
+rspから0x10を減算する。
+114e:	48 89 e5             	mov    rbp,rsp
+1151:	48 83 ec 10          	sub    rsp,0x10
+
+cmp命令は値の比較に用いられるものであり、jで始まる命令はすべてのコードの他の部分に
+制御を分岐させるものとなっている。
+
+以下の例はrbpレジスタの値から0x04を減算したあとをアドレスとして使い、
+そのアドレスから開始している4バイトの値と数値の9を比較している。
+1171:	83 7d fc 09          	cmp    DWORD PTR [rbp-0x4],0x9
+1175:	7e e7                	jle    115e <main+0x15>
+
+つぎは、等しいかそれ未満で分岐するjle命令になる。
+ここでは比較対象が9以下なら115eに移行する。
+
+GCCコンパイラに-gフラグを指定することで追加のデバッグ情報を出力させる
+
+gcc -g firstprog.c
+
+gdb -q ./a.out
+
+Reading symbols from ./a.out...
+(gdb) list
+1	#include <stdio.h>
+2	
+3	int main() {
+4	    int i;
+5	    for (i = 0; i < 10; i++) {
+6	        printf("Hello World!\n");
+7	    }
+8	
+9	    return 0;
+10	}
+(gdb) disassemble main
+Dump of assembler code for function main:
+   0x0000000000001149 <+0>:	endbr64
+   0x000000000000114d <+4>:	push   %rbp
+   0x000000000000114e <+5>:	mov    %rsp,%rbp
+   0x0000000000001151 <+8>:	sub    $0x10,%rsp
+   0x0000000000001155 <+12>:	movl   $0x0,-0x4(%rbp)
+   0x000000000000115c <+19>:	jmp    0x1171 <main+40>
+   0x000000000000115e <+21>:	lea    0xe9f(%rip),%rax        # 0x2004
+   0x0000000000001165 <+28>:	mov    %rax,%rdi
+   0x0000000000001168 <+31>:	call   0x1050 <puts@plt>
+   0x000000000000116d <+36>:	addl   $0x1,-0x4(%rbp)
+   0x0000000000001171 <+40>:	cmpl   $0x9,-0x4(%rbp)
+   0x0000000000001175 <+44>:	jle    0x115e <main+21>
+   0x0000000000001177 <+46>:	mov    $0x0,%eax
+   0x000000000000117c <+51>:	leave
+   0x000000000000117d <+52>:	ret
+End of assembler dump.
+(gdb) break main
+Breakpoint 1 at 0x1155: file firstprog.c, line 5.
+(gdb) run
+Starting program: /home/onimas/develop/github/secure_programming/C/buffer_orverflow/a.out 
+
+This GDB supports auto-downloading debuginfo from the following URLs:
+  <https://debuginfod.ubuntu.com>
+Enable debuginfod for this session? (y or [n]) y
+Debuginfod has been enabled.
+To make this setting permanent, add 'set debuginfod enabled on' to .gdbinit.
+Downloading separate debug info for system-supplied DSO at 0x7ffff7fc3000
+[Thread debugging using libthread_db enabled]                                                                                                                                           
+Using host libthread_db library "/lib/x86_64-linux-gnu/libthread_db.so.1".
+
+Breakpoint 1, main () at firstprog.c:5
+5	    for (i = 0; i < 10; i++) {
+
+(gdb) info register rip
+rip            0x555555555155      0x555555555155 <main+12>
