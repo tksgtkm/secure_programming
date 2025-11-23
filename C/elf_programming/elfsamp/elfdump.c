@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <elf.h>
@@ -16,7 +17,7 @@ static int elfdump(void *head) {
     char *sname;
 
     unsigned char *p = (unsigned char*)head;
-    // ehdr = (const Elf64_Ehdr*)head;
+    ehdr = (Elf64_Ehdr*)head;
 
     if (p[EI_MAG0] != ELFMAG0 || p[EI_MAG1] != ELFMAG1 ||
         p[EI_MAG2] != ELFMAG2 || p[EI_MAG3] != ELFMAG3) {
@@ -24,20 +25,20 @@ static int elfdump(void *head) {
         return 1;
     }
 
-    if (p[EI_CLASS] != ELFCLASS64) {
-        fprintf(stderr, "unknown class. (%d)\n", (int)p[EI_CLASS]);
+    if (ehdr->e_ident[EI_CLASS] == ELFCLASSNONE) {
+        fprintf(stderr, "unknown class. (%d)\n", ehdr->e_ident[EI_CLASS]);
         return 1;
     }
 
-    if (p[EI_DATA] != ELFDATA2MSB) {
-        fprintf(stderr, "unknown endian. (%d)\n", (int)p[EI_DATA]);
+    if (ehdr->e_ident[EI_DATA] == ELFDATANONE) {
+        fprintf(stderr, "unknown endian. (%d)\n", ehdr->e_ident[EI_DATA]);
     }
 
     shstr = (Elf64_Shdr *)(head + ehdr->e_shoff + ehdr->e_shentsize * ehdr->e_shstrndx);
 
     printf("Sections:\n");
     for (i = 0; i < ehdr->e_shnum; i++) {
-        shdr = (Elf64_Phdr *)(head + ehdr->e_phoff + ehdr->e_phentsize * i);
+        shdr = (Elf64_Shdr *)(head + ehdr->e_shoff + ehdr->e_shentsize * i);
         sname = (char *)(head + shstr->sh_offset + shdr->sh_name);
         printf("\t[%d]\t%s\n", i, sname);
         if (!strcmp(sname, ".strtab"))
@@ -60,17 +61,52 @@ static int elfdump(void *head) {
         }
         printf("\n");
     }
+
+    printf("Symbols:\n");
+    for (i = 0; i < ehdr->e_shnum; i++) {
+        shdr = (Elf64_Shdr *)(head + ehdr->e_shoff + ehdr->e_shentsize * i);
+        if (shdr->sh_type != SHT_SYMTAB)
+            continue;
+        sym = shdr;
+        for (j = 0; j < sym->sh_size / sym->sh_entsize; j++) {
+            symp = (Elf64_Sym *)(head + sym->sh_offset + sym->sh_entsize * j);
+            if (!symp->st_name)
+                continue;
+            printf("\t[%d]\t%d\t%ld\t%s\n",
+            j, (int)ELF64_ST_TYPE(symp->st_info), symp->st_size,
+            (char *)(head + str->sh_offset + symp->st_name));
+        }
+    }
+
+    printf("Relocations:\n");
+    for (i = 0; i < ehdr->e_shnum; i++) {
+        shdr = (Elf64_Shdr *)(head + ehdr->e_shoff + ehdr->e_shentsize * i);
+        if ((shdr->sh_type != SHT_REL) && (shdr->sh_type != SHT_RELA))
+            continue;
+        rel = shdr;
+        for (j = 0; j < rel->sh_size / rel->sh_entsize; j++) {
+            relp = (Elf64_Rel *)(head + rel->sh_offset + rel->sh_entsize * j);
+            symp = (Elf64_Sym *)(head + sym->sh_offset + (sym->sh_entsize * ELF64_R_SYM(relp->r_info)));
+            if (!symp->st_name)
+                continue;
+            printf("\t[%d]\t%ld\t%s\n", j, ELF64_R_SYM(relp->r_info),
+            (char *)(head + str->sh_offset + symp->st_name));
+        }
+    }
+
+    return 0;
 }
 
 int main(int argc, char *argv[]) {
     int fd;
     struct stat sb;
+    char *head;
 
     fd = open(argv[1], O_RDONLY);
     if (fd < 0)
         exit(1);
     fstat(fd, &sb);
-    void *head = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
+    head = mmap(NULL, sb.st_size, PROT_READ, MAP_SHARED, fd, 0);
     elfdump(head);
     munmap(head, sb.st_size);
     close(fd);
