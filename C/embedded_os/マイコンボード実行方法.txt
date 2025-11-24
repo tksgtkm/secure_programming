@@ -1,0 +1,9 @@
+bootloadディレクトリ下で
+sudo su でルート権限になる
+
+make write
+
+あとはホームディレクトリなどで
+sudo picocom -b 9600 -d 8 -p n -f n /dev/ttyUSB0
+
+その後ボード上のリセットスイッチを押せば出力される。
