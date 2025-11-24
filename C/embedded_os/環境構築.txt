@@ -1,0 +1,59 @@
+https://kozos.jp/books/makeos/binutils-2.19.1.tar.gz
+上記リンクからbinutilsをダウンロードする
+
+mkdir build-h8300 && cd build-h8300
+
+../configure \
+--target=h8300-elf \   
+--prefix=/usr/local/h8300 \   
+--disable-nls \
+--disable-werror
+
+古いgccなので、下記でビルド
+make CFLAGS="-g -O2 -fcommon"
+
+sudo make install
+
+echo 'export PATH=/usr/local/h8300/bin:$PATH' >> ~/.bashrc
+
+source ~/.bashrc
+
+which h8300-elf-ld
+表示されたらOK
+
+https://kozos.jp/books/makeos/gcc-3.4.6.tar.gz
+続いてgccをダウンロード
+
+mkdir build-h8300 && cd build-h8300
+
+../configure   \
+--target=h8300-elf \  
+--prefix=/usr/local/h8300 \  
+--enable-languages=c \
+--without-headers \
+--with-newlib \
+--disable-nls \ 
+--disable-shared \  
+--disable-threads \  
+--disable-libssp \
+--disable-libmudflap
+
+このままビルドするとエラーが出るので
+下記パッチを当てる
+
+cd ..
+wget -O- https://kozos.jp/books/makeos/patch-gcc-3.4.6-x64-h8300.txt | patch -p0
+
+cd build-h8300/
+
+make
+(make all-gcc)
+
+sudo make install
+もしエラーが出たら下記を実行
+sudo env "PATH=/usr/local/h8300/bin:$PATH" make install
+
+export PATH=/usr/local/h8300/bin:$PATH
+
+その後src/bootloadへ移動し、
+makeを実行する。
