@@ -49,6 +49,28 @@ cd build-h8300/
 make
 (make all-gcc)
 
+もし下記のエラーたでたら
+In function ‘open’,
+    inlined from ‘collect_execute’ at ../../gcc/collect2.c:1537:22:
+/usr/include/x86_64-linux-gnu/bits/fcntl2.h:50:11: error: call to ‘__open_missing_mode’ declared with attribute error: open with O_CREAT or O_TMPFILE in second argument needs 3 arguments
+   50 |           __open_missing_mode ();
+      |           ^~~~~~~~~~~~~~~~~~~~~~
+make[1]: *** [Makefile:1388: collect2.o] エラー 1
+make[1]: ディレクトリ '/home/onimas/ダウンロード/gcc-3.4.6/build-h8300/gcc' から出ます
+make: *** [Makefile:23374: all-gcc] エラー 2
+
+gcc/collect2.c にて
+
+fd = open (ldout, O_RDONLY | O_CREAT); のような記述があれば
+↓
+fd = open (ldout, O_RDONLY | O_CREAT, 0666);　に変更する
+
+その後
+make clean
+make all-gcc
+
+ビルドが通れば
+
 sudo make install
 もしエラーが出たら下記を実行
 sudo env "PATH=/usr/local/h8300/bin:$PATH" make install
