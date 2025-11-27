@@ -1,3 +1,10 @@
+
+make でビルド
+kzloadというファームウェアが作成される
+
+make image
+kzload.motというモトローラSフォーマットに変換する
+
 bootloadディレクトリ下で
 sudo su でルート権限になる
 
