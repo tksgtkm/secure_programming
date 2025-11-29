@@ -8,8 +8,10 @@ kzload.motというモトローラSフォーマットに変換する
 bootloadディレクトリ下で
 sudo su でルート権限になる
 
+スイッチ  on on off on
 make write
 
+スイッチ　on pff on off
 あとはホームディレクトリなどで
 sudo picocom -b 9600 -d 8 -p n -f n /dev/ttyUSB0
 
