@@ -110,3 +110,80 @@ typedef struct breakpoint {
     unsigned long vaddr;
     long orig_code;
 } breakpoint_t;
+
+typedef struct calldata {
+    char *symname;
+    char *string;
+    unsigned long vaddr;
+    unsigned long retaddr;
+    breakpoint_t breakpoint;
+} calldata_t;
+
+typedef struct callstack {
+    calldata_t *calldata;
+    unsigned int depth;
+} callstack_t;
+
+struct call_list {
+    char *callstring;
+    struct call_list *next;
+};
+
+#define MAX_SHRDS 256
+
+struct handle {
+    char *path;
+    char **args;
+    uint8_t *map;
+    struct elf32 *elf32;
+    struct elf64 *elf64;
+    struct elf_section_range sh_range[MAX_SHRDS];
+    struct syms lsyms[MAX_SYMS];
+    struct syms dsyms[MAX_SYMS];
+    char *libnames[256];
+    int lsc;
+    int dsc;
+    int lnc;
+    int shdr_count;
+    int pid;
+};
+
+int global_pid;
+
+void sighandle(int sig) {
+    fprintf(stdout, "Caught signal ctrl-C, detaching...\n");
+    ptrace(PTRACE_DETACH, global_pid, NULL, NULL);
+    exit(0);
+}
+
+int main(int argc, char **argv, char **envp) {
+    int opt, i, pid, status, skip_getopt = 0;
+    struct handle handle;
+    char **p, *arch;
+
+    struct sigaction act;
+    sigset_t set;
+    act.sa_handler = sighandle;
+    sigemptyset(&act.sa_mask);
+    act.sa_flags = 0;
+    sigaction(SIGINT, &act, NULL);
+    sigemptyset(&set);
+    sigaddset(&set, SIGINT);
+
+    if (argc < 2) {
+    usage:
+        printf("Usage: %s [-p <pid>] [-Sstve] <prog>\n", argv[0]);
+		printf("[-p] Trace by PID\n");
+		printf("[-t] Type detection of function args\n");
+		printf("[-s] Print string values\n");
+	//	printf("[-r] Show return values\n");
+		printf("[-v] Verbose output\n");
+		printf("[-e] Misc. ELF info. (Symbols,Dependencies)\n");
+		printf("[-S] Show function calls with stripped symbols\n");
+		printf("[-C] Complete control flow analysis\n");
+		exit(0);
+    }
+
+    if (argc == 2 && argv[1][0] == '-')
+        goto usage;
+}
