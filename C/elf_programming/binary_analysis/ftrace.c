@@ -150,6 +150,135 @@ struct handle {
 
 int global_pid;
 
+void *HeapAlloc(unsigned int);
+char *xstrdup(const char *);
+
+void set_breakpoint(callstack_t *callstack) {
+    int status;
+    long orig = ptrace(PTRACE_PEEKTEXT, global_pid, callstack->calldata[callstack->depth].retaddr);
+    long trap;
+
+    trap = (orig & ~0xff) | 0xcc;
+    if (opts.verbose)
+        printf("[+] Setting breakpoint on 0x%ls\n", callstack->calldata[callstack->depth].retaddr);
+    
+    ptrace(PTRACE_POKETEXT, global_pid, callstack->calldata[callstack->depth].retaddr, trap);
+    callstack->calldata[callstack->depth].breakpoint.orig_code = orig;
+    callstack->calldata[callstack->depth].breakpoint.vaddr = callstack->calldata[callstack->depth].retaddr;
+}
+
+void remove_breakpoint(callstack_t *callstack) {
+    int status;
+    if (opts.verbose)
+        printf("[+] Removing breakpoint from 0x%lx\n", callstack->calldata[callstack->depth].retaddr);
+    
+    ptrace(
+        PTRACE_POKETEXT, global_pid,
+        callstack->calldata[callstack->depth].retaddr,
+        callstack->calldata[callstack->depth].breakpoint.orig_code
+    );
+}
+
+void callstack_init(callstack_t *callstack) {
+    callstack->calldata = (calldata_t *)HeapAlloc(sizeof(calldata_t) * CALLSTACK_DEPTH);
+    callstack->depth = -1;
+}
+
+void callstack_push(callstack_t *callstack, calldata_t *calldata) {
+    memcpy(&callstack->calldata[++callstack->depth], calldata, sizeof(calldata_t));
+    set_breakpoint(callstack);
+}
+
+calldata_t *calldata_pop(callstack_t *callstack) {
+    if (callstack->depth == -1)
+        return NULL;
+    
+    remove_breakpoint(callstack);
+    return (&callstack->calldata[callstack->depth--]);
+}
+
+calldata_t *callstack_peek(callstack_t *callstack) {
+    if (callstack->depth == -1)
+        return NULL;
+    
+    return &callstack->calldata[callstack->depth];
+}
+
+struct call_list *add_call_string(struct call_list **head, const char *string) {
+    struct call_list *tmp = (struct call_list *)HeapAlloc(sizeof(struct call_list));
+
+    tmp->callstring = (char *)xstrdup(string);
+    tmp->next = *head;
+    *head = tmp;
+
+    return *head;
+}
+
+void clear_call_list(struct call_list **head) {
+    struct call_list *tmp;
+
+    if (!head)
+        return;
+    
+    while (*head != NULL) {
+        tmp = (*head)->next;
+        free(*head);
+        *head = tmp;
+    }
+}
+
+struct branch_instr *search_branch_instr(uint8_t instr) {
+    int i;
+    struct branch_instr *p, *ret;
+
+    for (i = 0, p = branch_table; p->mnemonic != NULL; p++, i++) {
+        if (instr == p->opcode)
+            return p;
+    }
+
+    return NULL;
+}
+
+void print_call_list(struct call_list **head) {
+    if (!head)
+        return;
+    
+    while (*head != NULL) {
+        fprintf(stdout, "%s", (*head)->callstring);
+        head = &(*head)->next;
+    }
+}
+
+void *HeapAlloc(unsigned int len) {
+    uint8_t *mem = malloc(len);
+    if (!mem) {
+        perror("malloc");
+        exit(-1);
+    }
+
+    return mem;
+}
+
+char *xstrdup(const char *s) {
+    char *p = strdup(s);
+    if (p == NULL) {
+        perror("strdup");
+        exit(-1);
+    }
+    return p;
+}
+
+char *xfmtstrdup(char *fmt, ...) {
+    char *s, buf[512];
+    va_list va;
+
+    va_start(va, fmt);
+    vsnprintf(buf, sizeof(buf), fmt, va);
+    s = xstrdup(buf);
+
+    return s;
+}
+
 void sighandle(int sig) {
     fprintf(stdout, "Caught signal ctrl-C, detaching...\n");
     ptrace(PTRACE_DETACH, global_pid, NULL, NULL);
@@ -171,7 +300,7 @@ int main(int argc, char **argv, char **envp) {
     sigaddset(&set, SIGINT);
 
     if (argc < 2) {
-    usage:
+usage:
         printf("Usage: %s [-p <pid>] [-Sstve] <prog>\n", argv[0]);
 		printf("[-p] Trace by PID\n");
 		printf("[-t] Type detection of function args\n");
@@ -186,4 +315,76 @@ int main(int argc, char **argv, char **envp) {
 
     if (argc == 2 && argv[1][0] == '-')
         goto usage;
+    
+    memset(&opts, 0, sizeof(opts));
+
+    opts.arch = 64;
+    arch = getenv(FTRACE_ENV);
+    if (arch != NULL) {
+        switch(atoi(arch)) {
+            case 32:
+                opts.arch = 32;
+                break;
+            case 64:
+                opts.arch = 64;
+                break;
+            default:
+                fprintf(stderr, "Unknown architecture: %s\n", arch);
+                break;
+        }
+    }
+
+    if (argv[1][0] != '-') {
+        handle.path = xstrdup(argv[1]);
+        handle.args = (char **)HeapAlloc(sizeof(char *) * argc - 1);
+
+        for (i = 0, p = &argv[1]; i != argc - 1; p++, i++) {
+            *(handle.args + i) = xstrdup(*p);
+        }
+        *(handle.args + i) = NULL;
+        skip_getopt = 1;
+    } else {
+        handle.path = xstrdup(argv[2]);
+        handle.args = (char **)HeapAlloc(sizeof(char *) * argc - 1);
+
+        for (i = 0, p = &argv[2]; i != argc - 2; p++, i++) {
+            *(handle.args + i) = xstrdup(*p);
+        }
+        *(handle.args + i) = NULL;
+    }
+
+    while ((opt = getopt(argc, argv, "CSrhtvep:s")) != -1) {
+        switch(opt) {
+            case 'S':
+                opts.stripped++;
+                break;
+            case 'r':
+                opts.showret++;
+                break;
+            case 'v':
+                opts.verbose;
+                break;
+            case 'e':
+                opts.elfinfo;
+                break;
+            case 't':
+                opts.typeinfo;
+                break;
+            case 'p':
+                opts.attach++;
+                handle.pid = atoi(optarg);
+                break;
+            case 's':
+                opts.getstr++;
+                break;
+            case 'C':
+                opts.cflow++;
+                break;
+            case 'h':
+                goto usage;
+            default:
+                printf("Unknown option\n");
+                exit(0);
+        }
+    }
 }
