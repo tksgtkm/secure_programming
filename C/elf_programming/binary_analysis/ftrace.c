@@ -90,7 +90,7 @@ struct elf32 {
     Elf32_Sym  *sym;
     Elf32_Dyn  *dyn;
 
-    char *stringTable;
+    char *StringTable;
     char *SymStringTable;
 };
 
@@ -279,6 +279,86 @@ char *xfmtstrdup(char *fmt, ...) {
     return s;
 }
 
+int pid_read(int pid, void *dst, const void *src, size_t len) {
+    int sz = len / sizeof(void *);
+    int rem = len % sizeof(void *);
+    unsigned char *s = (unsigned char *)src;
+    unsigned char *d = (unsigned char *)dst;
+    long word;
+
+    while (sz-- != 0) {
+        word = ptrace(PTRACE_PEEKTEXT, pid, s, NULL);
+        if (word == -1 && errno)
+            return -1;
+        
+        *(long *)d = word;
+        s += sizeof(long);
+        d += sizeof(long);
+    }
+
+    return 0;
+}
+
+int BuildSyms(struct handle *h) {
+    unsigned int i, j, k;
+    char *SymStrTable;
+    Elf32_Ehdr *ehdr32;
+    Elf32_Shdr *shdr32;
+    Elf32_Sym *symtab32;
+    Elf64_Ehdr *ehdr64;
+    Elf64_Shdr *shdr64;
+    Elf64_Sym *symtab64;
+    int st_type;
+
+    h->lsc = 0;
+    h->dsc = 0;
+
+    switch(opts.arch) {
+        case 32:
+            ehdr32 = h->elf32->ehdr;
+            shdr32 = h->elf32->shdr;
+
+            for (i = 0; i < ehdr32->e_shnum; i++) {
+                if (shdr32[i].sh_type == SHT_SYMTAB || shdr32[i].sh_type == SHT_DYNSYM) {
+                    SymStrTable = (char *)&h->map[shdr32[shdr32[i].sh_link].sh_offset];
+                    symtab32 = (Elf32_Sym *)&h->map[shdr32[i].sh_offset];
+
+                    for (j = 0; j < shdr32[i].sh_size / sizeof(Elf32_Sym); j++, symtab32++) {
+                        st_type = ELF32_ST_TYPE(symtab32->st_info);
+                        if (st_type != STT_FUNC)
+                            continue;
+
+                        switch(shdr32[i].sh_type) {
+                            case SHT_SYMTAB:
+                                h->lsyms[h->lsc].name = xstrdup(&SymStrTable[symtab32->st_name]);
+                                h->lsyms[h->lsc].value = symtab32->st_value;
+                                h->lsc;
+                                break;
+                            case SHT_DYNSYM:
+                                h->dsyms[h->dsc].name = xstrdup(&SymStrTable[symtab32->st_name]);
+                                h->dsyms[h->dsc].value = symtab32->st_value;
+                                h->dsc++;
+                                break;
+                        }
+                    }
+                }
+            }
+
+            h->elf32->StringTable = (char *)&h->map[shdr32[ehdr32->e_shstrndx].sh_offset];
+            for (i = 0; i < ehdr32->e_shnum; i++) {
+                if (!strcmp(&h->elf32->StringTable[shdr32[i].sh_name], ".plt")) {
+                    for (k = 0, j = 0; j < shdr32[i].sh_size; j += 16) {
+                        if (j >= 16) {
+                            h->dsyms[k++].value = shdr32[i].sh_addr + j;
+                        }
+                    }
+                    break;
+                }
+            }
+            break;
+    }
+}
+
 void sighandle(int sig) {
     fprintf(stdout, "Caught signal ctrl-C, detaching...\n");
     ptrace(PTRACE_DETACH, global_pid, NULL, NULL);
@@ -387,4 +467,35 @@ usage:
                 exit(0);
         }
     }
+
+begin:
+
+    if (opts.verbose) {
+        switch(opts.arch) {
+            case 32:
+                printf("[+] 32bit ELF mode enabled!\n");
+                break;
+            case 64:
+                printf("[+] 64bit ELF mode enabled!\n");
+                break;
+        }
+        if (opts.typeinfo) {
+            printf("[+] Pointer type prediction enabled\n");
+        }
+    }
+
+    if (opts.arch == 32 && opts.typeinfo) {
+        printf("[!] Option -t may not be used on 32bit executables");
+        exit(0);
+    }
+
+    if (opts.arch == 32 && opts.getstr) {
+        printf("[!] Option -s may not be used on 32bit executables\n");
+        exit(0);
+	}
+
+	if (opts.getstr && opts.typeinfo) {
+		printf("[!] Options -t and -s may not be used together\n");
+		exit(0);
+	}
 }
