@@ -1,0 +1,50 @@
+#ifndef MY_BUF_H
+#define MY_BUF_H
+
+#include <cstdint>
+#include <cstring>
+#include <cstdio>
+#include <string>
+
+struct my_buf {
+    my_buf *previous = nullptr;
+    my_buf *next = nullptr;
+    uint32_t len = 0;
+    uint8_t buffer[];
+
+    static my_buf *create(uint32_t len) {
+        auto *buf = (my_buf *)calloc(1, sizeof(my_buf) + len);
+        buf->len = len;
+        return buf;
+    }
+
+    static void my_buf_free(my_buf *buf, bool is_recursive = false) {
+        if (!is_recursive) {
+            free(buf);
+            return;
+        }
+
+        my_buf *tail = buf->get_tail(), *tmp;
+        while (tail != nullptr) {
+            tmp = tail;
+            tail = tmp->previous;
+            free(tmp);
+        }
+    }
+
+    my_buf *get_tail() {
+        my_buf *current = this;
+        while (current->next != nullptr) {
+            current = current->next;
+        }
+
+        return current;
+    }
+
+    void add_header(my_buf *buf) {
+        this->previous = buf;
+        buf->next = this;
+    }
+};
+
+#endif
