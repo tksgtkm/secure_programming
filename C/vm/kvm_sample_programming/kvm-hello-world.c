@@ -169,6 +169,8 @@ int run_vm(struct vm *vm, struct vcpu *vcpu, size_t sz) {
                     fflush(stdout);
                     continue;
                 }
+                // 意図的にfallthroughさせる(0xE9以外のIOはdefault扱いとする)
+                __attribute__((fallthrough));
             default:
                 fprintf(stderr, "Got exit_reason %d, expected KVM_EXIT_HLT (%d)\n",
                 vcpu->kvm_run->exit_reason, KVM_EXIT_HLT);
@@ -314,6 +316,141 @@ int run_paged_32bit_mode(struct vm *vm, struct vcpu *vcpu) {
         exit(1);
     }
 
+    memset(&regs, 0, sizeof(regs));
+
+    regs.rflags = 2;
+    regs.rip = 0;
+
+    if (ioctl(vcpu->fd, KVM_SET_REGS, &regs) < 0) {
+        perror("KVM_SET_REGS");
+        exit(1);
+    }
+
     memcpy(vm->mem, guest32, guest32_end-guest32);
     return run_vm(vm, vcpu, 4);
+}
+
+extern const unsigned char guest64[], guest64_end[];
+
+static void setup_64bit_code_segment(struct kvm_sregs *sregs) {
+    struct kvm_segment seg = {
+        .base = 0,
+        .limit = 0xffffffff,
+        .selector = 1 << 3,
+        .present = 1,
+        .type = 11,
+        .dpl = 0,
+        .db = 0,
+        .s = 1,
+        .l = 1,
+        .g = 1,
+    };
+
+    sregs->cs = seg;
+
+    seg.type = 3;
+    seg.selector = 2 << 3;
+    sregs->ds = sregs->es = sregs->fs = sregs->gs = sregs->ss = seg;
+}
+
+static void setup_long_mode(struct vm *vm, struct kvm_sregs *sregs) {
+    uint64_t pml4_addr = 0x2000;
+    uint64_t *pml4 = (void *)(vm->mem + pml4_addr);
+
+    uint64_t pdpt_addr = 0x3000;
+    uint64_t *pdpt = (void *)(vm->mem + pdpt_addr);
+
+    uint64_t pd_addr = 0x4000;
+    uint64_t *pd = (void *)(vm->mem + pd_addr);
+
+    pml4[0] = PDE64_PRESENT | PDE64_RW | PDE64_USER | pdpt_addr;
+    pdpt[0] = PDE64_PRESENT | PDE64_RW | PDE64_USER | pd_addr;
+    pd[0] = PDE64_PRESENT | PDE64_RW | PDE64_USER | PDE64_PS;
+
+    sregs->cr3 = pml4_addr;
+    sregs->cr4 = CR4_PAE;
+    sregs->cr0 = CR0_PE | CR0_MP | CR0_ET | CR0_NE | CR0_WP | CR0_AM | CR0_PG;
+    sregs->efer = EFER_LME | EFER_LMA;
+
+    setup_64bit_code_segment(sregs);
+}
+
+int run_long_mode(struct vm *vm, struct vcpu *vcpu) {
+    struct kvm_sregs sregs;
+    struct kvm_regs regs;
+
+    printf("Teting 64-bit mode\n");
+    if (ioctl(vcpu->fd, KVM_GET_SREGS, &sregs) < 0) {
+        perror("KVM_GET_SREGS");
+        exit(1);
+    }
+
+    setup_long_mode(vm, &sregs);
+
+    if (ioctl(vcpu->fd, KVM_SET_SREGS, &sregs) < 0) {
+        perror("KVM_SET_SREGS");
+        exit(1);
+    }
+
+    memset(&regs, 0, sizeof(regs));
+
+    regs.rflags = 2;
+    regs.rip = 0;
+    regs.rsp = 2 << 20;
+
+    if (ioctl(vcpu->fd, KVM_SET_REGS, &regs) < 0) {
+        perror("KVM_SET_REGS");
+        exit(1);
+    }
+
+    memcpy(vm->mem, guest64, guest64_end-guest64);
+    return run_vm(vm, vcpu, 8);
+}
+
+int main(int argc, char **argv) {
+    struct vm vm;
+    struct vcpu vcpu;
+    enum {
+        REAL_MODE,
+        PROTECTED_MODE,
+        PAGED_32BIT_MODE,
+        LONG_MODE,
+    } mode = REAL_MODE;
+    int opt;
+
+    while ((opt = getopt(argc, argv, "rspl")) != -1) {
+        switch(opt) {
+            case 'r':
+                mode = REAL_MODE;
+                break;
+            case 's':
+                mode = PROTECTED_MODE;
+                break;
+            case 'p':
+                mode = PAGED_32BIT_MODE;
+                break;
+            case 'l':
+                mode = LONG_MODE;
+                break;
+            default:
+                fprintf(stderr, "Usage: %s [ -r | -s | -p | -l]\n", argv[0]);
+                return 1;
+        }
+    }
+
+    vm_init(&vm, 0x200000);
+    vcpu_init(&vm, &vcpu);
+
+    switch(mode) {
+        case REAL_MODE:
+            return !run_real_mode(&vm, &vcpu);
+        case PROTECTED_MODE:
+            return !run_protected_mode(&vm, &vcpu);
+        case PAGED_32BIT_MODE:
+            return !run_paged_32bit_mode(&vm, &vcpu);
+        case LONG_MODE:
+            return !run_long_mode(&vm, &vcpu);
+    }
+
+    return 1;
 }
