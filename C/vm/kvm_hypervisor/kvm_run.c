@@ -14,12 +14,14 @@
 #define MEM_SIZE 1024000
 
 int main(int argc, char **argv) {
+    // コマンドラインからゲストとして実行するバイナリを受け取る
     if (argc != 2) {
         fprintf(stderr, "Usage: %s <binary file>\n", argv[0]);
         return 1;
     }
 
     char *binary = argv[1];
+    // /dev/kvmを開く
     int dev = open("/dev/kvm", O_RDWR);
     if (dev < 0) {
         perror("open failed");
@@ -29,6 +31,7 @@ int main(int argc, char **argv) {
     long kvm_api_version = ioctl(dev, KVM_GET_API_VERSION);
     printf("KVM API version: %ld\n", kvm_api_version);
 
+    // VMを作成する(KVM_CREATE_VM)
     int vm_fd = ioctl(dev, KVM_CREATE_VM);
     if (vm_fd < 0) {
         perror("KVM_CREATE_VM failed");
@@ -49,12 +52,14 @@ int main(int argc, char **argv) {
         .memory_size = MEM_SIZE,
         .userspace_addr = (uint64_t)load_addr,
     };
+    // VMのメモリを確保し、バイナリをロードする(KVM_SET_USER_MEMORY_REGION)
     int ret = ioctl(vm_fd, KVM_SET_USER_MEMORY_REGION, &mem);
     if (ret < 0) {
         perror("KVM_SET_USER_MEMORY_REGION failed");
         return 1;
     }
 
+    // バイナリにメモリをロード
     FILE *file = fopen(binary, "rb");
     if (!file) {
         perror("fopen failed");
@@ -63,12 +68,14 @@ int main(int argc, char **argv) {
     fread(load_addr, MEM_SIZE, 1, file);
     fclose(file);
 
+    // vCPUを作成し、メモリを初期化する(KVM_CREATE_VCPU, KVM_GET_VCPU_MMAP_SIZE)
     int vcpu_fd = ioctl(vm_fd, KVM_CREATE_VCPU, 0);
     if (vcpu_fd < 0) {
         perror("KVM_CREATE_VCPU failed");
         return 1;
     }
 
+    // vCPUのメモリマップ
     int kvm_run_mmap_size = ioctl(dev, KVM_GET_VCPU_MMAP_SIZE, NULL);
     if (kvm_run_mmap_size < 0) {
         perror("KVM_GET_VCPU_MMAP_SIZE failed");
@@ -81,6 +88,7 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    // vCPUレジスタを初期化する(KVM_GET_REGS, KVM_SET_REGS, KVM_GET_SREGS, KVM_SET_SREGS)
     struct kvm_regs regs;
     ret = ioctl(vcpu_fd, KVM_GET_REGS, &regs);
     if (ret < 0) {
@@ -111,13 +119,16 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    // VMを実行する(KVM_RUN)
     while (1) {
+        
         int ret = ioctl(vcpu_fd, KVM_RUN, 0);
         if (ret < 0) {
             perror("KVM_RUN failed");
             return 1;
         }
 
+        // KVM_RUNが返ってきたら、KVM_EXIT_REASONに応じて処理を行う
         struct kvm_run *kvm_run = (struct kvm_run *)kvm_run_ptr;
         int exit_reason = kvm_run->exit_reason;
         switch (exit_reason) {
@@ -126,11 +137,13 @@ int main(int argc, char **argv) {
                 return 0;
             case KVM_EXIT_IO:
                 if (kvm_run->io.direction == KVM_EXIT_IO_IN) {
+                    // シリアルポートからの入力待ち
                     printf("Enter a number: ");
                     char *in_data = (char *)kvm_run_ptr;
                     int offset = kvm_run->io.data_offset;
                     scanf("%d", (int *)(in_data + offset));
                 } else {
+                    // シリアルポートへの出力
                     unsigned char *out_data = (unsigned char *)kvm_run_ptr;
                     int port = kvm_run->io.port;
                     int offset = kvm_run->io.data_offset;
